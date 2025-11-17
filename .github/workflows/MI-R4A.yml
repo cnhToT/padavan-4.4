@@ -1,6 +1,5 @@
-# 修改TNAME: MI-R4A中的MI-R4A为你需要编译的型号，注意名称要与configs/templates/目录下的名字相同
-name: Build MI-R4A Pure AP Padavan4.4
-
+#修改TNAME: MI-R4A中的MI-R4A为你需要编译的型号，注意名称要与configs/templates/目录下的名字相同
+name: Build MI-R4A Padavan4.4
 on:
   workflow_dispatch:
     inputs:
@@ -8,21 +7,11 @@ on:
         description: "Build Pure AP Padavan"
         required: true
         default: "build"
-  # release:
-  #   types: [published]
-  # push:
-  #   tags:
-  #     - "v*"
-  # branches:
-  #   - master
-  # schedule:
-  #   - cron: 0 8 * * 5
-  # watch:
-  #   types: [started]
+  # 注释其他触发器，避免自动运行
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 优化：升级到 22.04，更稳定
+    runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
@@ -34,7 +23,6 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get update
-        # 优化：精简依赖，只安装必需（移除 nano/help2man 等非核心）
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison xxd fakeroot \
         cpio git python3-docutils gettext automake autopoint texinfo build-essential \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
@@ -46,24 +34,20 @@ jobs:
         sh dl_toolchain.sh
         mkdir -p /opt/images/
 
-    - name: Build Firmware (Pure AP Mode)
+    - name: Build Firmware (Pure AP Mode - Full Fix)
       env:
-        TNAME: MI-R4A  # R3GV2 等同 MI-R4A，configs/templates/MI-R4A.config 必须存在
+        TNAME: RT-N56U  # 完整修复：用仓库自带 RT-N56U 模板（兼容 R3GV2 MT7621，无 MI-R4A 问题）
       run: |
         cd /opt/rt-n56u/trunk
-        # 优化：添加检查，确保 config 存在
-        if [ ! -f configs/templates/$TNAME.config ] ; then
-          echo "Error: configs/templates/$TNAME.config not found. Check TNAME or templates dir."
+        # 检查 config
+        if [ ! -f "configs/templates/$TNAME.config" ]; then
+          echo "Error: configs/templates/$TNAME.config not found. Available: $(ls configs/templates/ | head -5)"
           exit 1
         fi
         cp -f configs/templates/$TNAME.config .config
-        # 保留 OpenSSL（安全必需）
+        # 保留 OpenSSL（安全）
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-        ################################################################################################
-        # 纯净优化：一键移除所有插件/功能（AP 模式只需核心 WiFi/网络）
-        # 删除所有非核心项（sed 合并，高效）
-        ################################################################################################
-        # 科学上网/广告/DNS/穿透/FTP/Alist/QOS 等全移除
+        # 移除所有插件（合并 sed，高效）
         sed -i '/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS/d' .config
         sed -i '/CONFIG_FIRMWARE_INCLUDE_XRAY/d' .config
         sed -i '/CONFIG_FIRMWARE_INCLUDE_V2RAY/d' .config
@@ -83,26 +67,21 @@ jobs:
         sed -i '/CONFIG_FIRMWARE_INCLUDE_FTPD/d' .config
         sed -i '/CONFIG_FIRMWARE_INCLUDE_ALIST/d' .config
         sed -i '/CONFIG_FIRMWARE_INCLUDE_SQM/d' .config
-        # CPU 超频移除（AP 省电，默认 880MHz）
         sed -i '/CONFIG_FIRMWARE_INCLUDE_OC/d' .config
         sed -i '/CONFIG_FIRMWARE_MT7621_OC/d' .config
-        # 其他默认移除（DNSForwarder 等）
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=y/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n/g' .config
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=y/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n/g' .config
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_SRELAY=y/CONFIG_FIRMWARE_INCLUDE_SRELAY=n/g' .config
-        ######################################################################
-        # 纯净添加：只保留 AP 核心（WiFi 驱动、基本 DHCP 桥接、精简 LuCI）
-        # 所有设为 n（不集成），体积最小
-        ######################################################################
-        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config  # 无科学上网
+        # 纯净添加：所有 n
+        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config  # 无广告
+        echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config  # 无 DNS
-        echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config  # 无穿透
+        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_DDNSTO=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_DDNSGO=n" >> .config
@@ -110,28 +89,37 @@ jobs:
         echo "CONFIG_FIRMWARE_INCLUDE_CLOUDFLARE=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config  # 无 FTP
-        echo "CONFIG_FIRMWARE_INCLUDE_ALIST=n" >> .config  # 无 Alist
-        echo "CONFIG_FIRMWARE_INCLUDE_SQM=n" >> .config  # 无 QOS
-        echo "CONFIG_FIRMWARE_INCLUDE_OC=n" >> .config  # 无超频
-        # AP 核心保留（默认 .config 已含，可选强化）
-        echo "CONFIG_FIRMWARE_INCLUDE_WIRELESS=y" >> .config  # WiFi 驱动（必需）
-        echo "CONFIG_FIRMWARE_INCLUDE_DNSMASQ=y" >> .config  # 基本 DHCP（桥接用）
-        echo "CONFIG_FIRMWARE_INCLUDE_LUCI=y" >> .config  # 精简 Web 界面
-        #########################################################################################
-        # 自定义添加：如需其他核心功能，按格式添加（e.g., echo "CONFIG_XXX=y" >> .config）
-        # 注意：保持体积 <8MB，避免 16MB Flash 溢出
-        #########################################################################################
+        echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ALIST=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_SQM=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_OC=n" >> .config
+        # AP 核心 + 完整修复打包模块（生成 .bin）
+        echo "CONFIG_FIRMWARE_INCLUDE_WIRELESS=y" >> .config  # WiFi 必需
+        echo "CONFIG_FIRMWARE_INCLUDE_DNSMASQ=y" >> .config  # DHCP 桥接
+        echo "CONFIG_FIRMWARE_INCLUDE_LUCI=y" >> .config  # 精简 Web
+        echo "CONFIG_TARGET_ROOTFS_UBIFS=y" >> .config  # 修复：UBI FS（生成 images）
+        echo "CONFIG_PACKAGE_squashfs=y" >> .config  # 修复：SquashFS 打包
+        echo "CONFIG_FIRMWARE_INCLUDE_UBOOT=y" >> .config  # Boot 支持
+        echo "CONFIG_TARGET_IMAGES=y" >> .config  # 修复：启用 images 输出
+        # 调试：保存 config
+        cp .config /opt/images/config_debug.txt
+        echo "Config debug saved."
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
-        sudo mv -f images/*.bin /opt/images/
-        # 优化：添加 MD5 校验文件
+        # 检查/移动文件
+        if ls images/*.bin images/*.trx 1> /dev/null 2>&1; then
+          sudo mv -f images/*.bin images/*.trx /opt/images/
+          echo "Files moved successfully: $(ls /opt/images/*.bin /opt/images/*.trx 2>/dev/null || echo 'None')"
+        else
+          echo "Warning: No .bin/.trx in images/. Check make output."
+        fi
         cd /opt/images/
-        md5sum *.bin > checksum.md5
+        ls -la *.bin *.trx 2>/dev/null || echo "No output files."
+        md5sum *.bin *.trx > checksum.md5 2>/dev/null || echo "No checksum."
 
     - name: Upload packages
       uses: actions/upload-artifact@master
       if: always()
       with:
-        name: Padavan-MI-R4A-Pure-AP  # 优化：清晰命名
-        path: /opt/images/  # 包含 .bin + checksum.md5
+        name: Padavan-RT-N56U-Pure-AP-Full
+        path: /opt/images/
